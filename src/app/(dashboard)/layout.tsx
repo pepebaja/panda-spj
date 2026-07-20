@@ -118,13 +118,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <span className="font-medium text-batu-navy">{activeNav?.label || "PANDA-SPJ"}</span>
           </div>
           <div className="flex items-center gap-3">
-            {konteks ? (
-              <KonteksSwitcher tahun={konteks.tahun} tahapanKode={konteks.tahapanKode} />
-            ) : (
-              <span className="text-[11.5px] px-2.5 py-1.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 font-medium" title="Login ulang, atau hubungi Administrator jika terus berulang">
-                ⚠️ Konteks Tahun Anggaran belum terbentuk
-              </span>
-            )}
+            <KonteksSwitcher tahun={konteks?.tahun ?? null} tahapanKode={konteks?.tahapanKode ?? null} />
             <div className="hidden sm:flex items-center gap-2 text-[12.5px] text-slate-500">
               <span className="h-7 w-7 rounded-full bg-gradient-to-br from-batu-navy to-batu-forest flex items-center justify-center text-[10.5px] font-bold text-white shrink-0">
                 {initials(displayName)}
