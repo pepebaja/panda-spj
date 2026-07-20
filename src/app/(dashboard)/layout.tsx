@@ -24,25 +24,57 @@ function initials(name: string) {
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const hdrs = await headers();
 
-  let { data: pegawai, error: pegawaiError } = await supabase.from("pegawai").select("nama, role, username").eq("id", user.id).single();
-  if (pegawaiError) {
+  // middleware.ts sudah memvalidasi sesi dan menaruh id pengguna di header
+  // `x-user-id` — pakai itu di jalur normal supaya TIDAK perlu memanggil
+  // supabase.auth.getUser() lagi di sini (getUser() adalah round-trip ke
+  // Supabase Auth; memanggilnya dua kali per navigasi menggandakan latensi).
+  // Fallback ke getUser() hanya kalau header entah kenapa tidak ada.
+  let userId = hdrs.get("x-user-id");
+  let userEmailFallback: string | null = null;
+  if (!userId) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) redirect("/login");
+    userId = user.id;
+    userEmailFallback = user.email ?? null;
+  }
+
+  const pathname = hdrs.get("x-pathname") || "";
+
+  // Ambil profil pegawai & konteks tahun/tahapan secara PARALEL (independen
+  // satu sama lain) alih-alih berurutan, untuk mempercepat render awal.
+  const [pegawaiResult, konteks] = await Promise.all([
+    supabase.from("pegawai").select("nama, role, username").eq("id", userId).single(),
+    getKonteksAnggaran(),
+  ]);
+
+  let pegawai = pegawaiResult.data;
+  if (pegawaiResult.error) {
     // Kemungkinan kolom `username` belum ada (migration 0002 belum dijalankan) —
     // fallback ke query tanpa username agar nama/role tetap tampil.
-    const fallback = await supabase.from("pegawai").select("nama, role").eq("id", user.id).single();
+    const fallback = await supabase.from("pegawai").select("nama, role").eq("id", userId).single();
     pegawai = fallback.data ? { ...fallback.data, username: null } : null;
   }
+
+  // Nama tampilan: nama lengkap > username > email (email hanya sebagai
+  // upaya terakhir kalau baris pegawai belum lengkap sama sekali).
+  let displayName = pegawai?.nama || pegawai?.username;
+  if (!displayName) {
+    if (!userEmailFallback) {
+      const { data: { user } } = await supabase.auth.getUser();
+      userEmailFallback = user?.email ?? null;
+    }
+    displayName = userEmailFallback || "Pengguna";
+  }
+
   const usernameBelumDiatur = pegawai !== null && !pegawai.username;
-  const pathname = (await headers()).get("x-pathname") || "";
   const activeNav = NAV.find((n) => pathname.startsWith(n.href));
-  const konteks = await getKonteksAnggaran();
 
   return (
-    <div className="min-h-screen w-full flex">
+    <div className="h-screen w-full flex overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-60 shrink-0 bg-batu-gradient text-white flex flex-col">
+      <aside className="w-60 shrink-0 bg-batu-gradient text-white flex flex-col overflow-y-auto">
         <div className="px-5 py-5 border-b border-white/10 flex items-center gap-3">
           <Image src="/logo-panda-spj.jpeg" alt="Logo PANDA-SPJ" width={40} height={40} className="rounded-lg shrink-0 ring-2 ring-white/20" />
           <div>
@@ -69,16 +101,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </nav>
         <div className="px-5 py-4 border-t border-white/10 text-[11.5px] text-blue-100 flex items-center gap-2.5">
           <span className="h-8 w-8 rounded-full bg-gradient-to-br from-batu-gold to-amber-500 flex items-center justify-center text-[11px] font-bold text-batu-navy shrink-0">
-            {initials(pegawai?.nama || user.email || "?")}
+            {initials(displayName)}
           </span>
           <div className="min-w-0">
-            <div className="font-medium truncate">{pegawai?.nama || user.email}</div>
+            <div className="font-medium truncate">{displayName}</div>
             <div className="text-blue-200/70 truncate">{pegawai?.role || "-"}</div>
           </div>
         </div>
       </aside>
 
-      {/* Konten + topbar */}
+      {/* Konten + topbar (statis, tidak ikut scroll — hanya <main> yang scroll) */}
       <div className="flex-1 min-w-0 flex flex-col">
         <header className="h-14 shrink-0 bg-white border-b border-slate-200 flex items-center justify-between px-6">
           <div className="flex items-center gap-2 text-[13.5px] text-slate-500">
@@ -89,10 +121,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
             {konteks && <KonteksSwitcher tahun={konteks.tahun} tahapanKode={konteks.tahapanKode} />}
             <div className="hidden sm:flex items-center gap-2 text-[12.5px] text-slate-500">
               <span className="h-7 w-7 rounded-full bg-gradient-to-br from-batu-navy to-batu-forest flex items-center justify-center text-[10.5px] font-bold text-white shrink-0">
-                {initials(pegawai?.nama || user.email || "?")}
+                {initials(displayName)}
               </span>
               <div className="leading-tight">
-                <div className="font-medium text-slate-700">{pegawai?.nama || user.email}</div>
+                <div className="font-medium text-slate-700">{displayName}</div>
                 <div className="text-[10.5px] text-slate-400">{pegawai?.role || "-"}</div>
               </div>
             </div>

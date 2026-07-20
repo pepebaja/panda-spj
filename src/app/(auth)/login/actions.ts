@@ -18,11 +18,19 @@ import { setKonteksAnggaran } from "@/lib/konteks-anggaran";
  * Vercel > Deployments > Functions Logs) dengan kode singkat agar
  * Administrator bisa mendiagnosis root cause TANPA aplikasi membocorkan
  * detail itu ke pengguna (pesan ke pengguna tetap digeneralisasi).
+ *
+ * CATATAN PERFORMA: lookup Tahun Anggaran/Tahapan (untuk cookie konteks)
+ * TIDAK bergantung pada hasil autentikasi, jadi dijalankan PARALEL dengan
+ * proses login (bukan berurutan sesudahnya) memakai Promise.all — mengurangi
+ * jumlah round-trip berurutan ke Supabase yang sebelumnya membuat proses
+ * login terasa lambat.
  */
 export async function login(prev: { error?: string } | undefined, formData: FormData) {
   const identifier = String(formData.get("username") || "").trim().toLowerCase();
   const password = String(formData.get("password") || "");
   const redirectTo = String(formData.get("redirectTo") || "/dashboard");
+  const tahunDipilih = Number(formData.get("tahun_anggaran") || 0);
+  const tahapanDipilih = String(formData.get("tahapan") || "perubahan");
 
   if (!identifier || !password) {
     return { error: "Username dan kata sandi wajib diisi." };
@@ -30,6 +38,15 @@ export async function login(prev: { error?: string } | undefined, formData: Form
 
   const admin = createServiceRoleClient();
   const isEmail = identifier.includes("@");
+
+  // Lookup tahun/tahapan tidak bergantung pada identitas pengguna — mulai
+  // sekarang juga secara paralel, baru di-`await` belakangan (di bawah).
+  const konteksPromise = tahunDipilih
+    ? Promise.all([
+        admin.from("tahun_anggaran").select("id").eq("tahun", tahunDipilih).maybeSingle(),
+        admin.from("tahapan_anggaran").select("id").eq("kode", tahapanDipilih).maybeSingle(),
+      ])
+    : null;
 
   let emailUntukLogin: string | null = null;
 
@@ -92,15 +109,9 @@ export async function login(prev: { error?: string } | undefined, formData: Form
     }
   }
 
-  // Simpan pilihan Tahun Anggaran & Tahapan dari halaman login sebagai
-  // konteks kerja sesi ini (dipakai di Transaksi, Dashboard, dsb — lihat
-  // src/lib/konteks-anggaran.ts). Dicari/dibuat berdasarkan nilai yang
-  // dipilih pengguna di form login.
-  const tahunDipilih = Number(formData.get("tahun_anggaran") || 0);
-  const tahapanDipilih = String(formData.get("tahapan") || "perubahan");
-  if (tahunDipilih) {
-    const { data: tahunRow } = await admin.from("tahun_anggaran").select("id").eq("tahun", tahunDipilih).maybeSingle();
-    const { data: tahapanRow } = await admin.from("tahapan_anggaran").select("id").eq("kode", tahapanDipilih).maybeSingle();
+  // Ambil hasil lookup tahun/tahapan yang sudah berjalan paralel sejak awal.
+  if (konteksPromise) {
+    const [{ data: tahunRow }, { data: tahapanRow }] = await konteksPromise;
     if (tahunRow && tahapanRow) {
       await setKonteksAnggaran(tahunRow.id, tahapanRow.id);
     }

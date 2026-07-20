@@ -347,3 +347,50 @@ berlaku untuk transaksi tsb — bukan seluruh baris ditampilkan sekaligus.
 Lihat `supabase/migrations/0004_pajak_daerah_dan_perorangan.sql` dan 4 unit
 test tambahan di `tests/unit/pajak.test.ts` (total 26 test pajak, 40 test
 keseluruhan).
+
+## 21. Data Awal Kode Rekening (Import Excel Siap Pakai)
+
+`Kode_Rekening_Import_PANDA-SPJ.xlsx` (dibagikan terpisah, di luar isi repo)
+berisi ke-52 baris `1__DATABASE.pdf` yang sudah diformat persis sesuai kolom
+yang diharapkan modul Import Excel (Data Master → Import/Export Excel):
+`Kode Rekening, Program, Kegiatan, Sub Kegiatan, Belanja, Sumber Dana, PPTK,
+Pagu Murni, Pagu Pergeseran, Pagu Perubahan`. Kolom **Pagu Pergeseran** diisi
+sama dengan **Pagu Murni** karena lampiran asli hanya mencantumkan kolom
+Murni dan Perubahan — sesuaikan manual per baris di Data Master (Tahapan
+Perubahan) bila nilai Pergeseran sesungguhnya berbeda.
+
+**Dashboard/Transaksi kosong sebelumnya karena `seed.sql` hanya memuat SATU
+baris contoh** — bukan bug, tapi karena data DPA lengkap memang belum
+diimpor. Setelah file Excel ini diunggah, Dashboard dan Transaksi akan
+otomatis terisi (keduanya sudah difilter sesuai Tahun Anggaran & Tahapan
+yang dipilih saat login).
+
+## 22. Perbaikan UX & Performa
+
+- **Dashboard** sekarang memfilter Kode Rekening & Transaksi berdasarkan
+  konteks Tahun Anggaran aktif (sebelumnya menampilkan seluruh data tanpa
+  filter tahun, dan selalu memakai Pagu Perubahan berapa pun Tahapan yang
+  dipilih). Pesan status kosong yang jelas ditambahkan, konsisten dengan
+  halaman Transaksi.
+- **Header/topbar kini statis (tidak ikut scroll)** — akar masalahnya
+  container terluar memakai `min-h-screen` (boleh tumbuh melebihi viewport,
+  membuat seluruh halaman ikut di-scroll browser) diganti `h-screen` tetap,
+  sehingga hanya area konten (`<main>`) yang scroll secara internal.
+- **Nama akun yang tampil** di sidebar/topbar sekarang prioritas
+  `nama lengkap → username → email` (sebelumnya langsung jatuh ke email
+  begitu `pegawai.nama` kosong). Isi Nama lengkap pegawai lewat Data Master
+  atau `BOOTSTRAP_ADMIN_PERTAMA.sql` agar tidak tampil sebagai email/username.
+- **Login & navigasi dipercepat**: `middleware.ts` meneruskan `user.id` lewat
+  header `x-user-id` sehingga `layout.tsx` tidak perlu memanggil
+  `supabase.auth.getUser()` kedua kalinya di setiap navigasi (sebelumnya
+  dipanggil 2× per halaman — sekali di middleware, sekali lagi di layout).
+  Lookup profil pegawai & konteks Tahun/Tahapan juga dijalankan paralel
+  (`Promise.all`) alih-alih berurutan. Proses login sendiri memparalelkan
+  lookup Tahun Anggaran/Tahapan dengan proses autentikasi.
+  Latensi sisa yang tidak bisa dihilangkan dari sisi kode: jarak jaringan
+  Vercel Function ↔ project Supabase — kalau masih terasa lambat, cek region
+  project Supabase Anda (Project Settings → General) dan usahakan sedekat
+  mungkin dengan region Vercel Function (`iad1`/Washington DC pada log build
+  Anda); kalau project Supabase ada di region lain (mis. Singapore), pindahkan
+  region deployment Vercel Function lewat `vercel.json` (`"regions": ["sin1"]`)
+  supaya keduanya berdekatan.

@@ -12,7 +12,12 @@ const ROUTE_ROLES: Record<string, string[]> = {
 export async function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-pathname", request.nextUrl.pathname);
-  let response = NextResponse.next({ request: { headers: requestHeaders } });
+
+  // Cookie yang perlu ditulis ulang (mis. refresh token Supabase) dikumpulkan
+  // dulu, baru diterapkan ke response TUNGGAL di akhir — supaya tidak ada
+  // reassignment `response` yang bisa saling menimpa (menghindari kelas bug
+  // "kehilangan cookie refresh sesi").
+  const pendingCookies: { name: string; value: string; options: CookieOptions }[] = [];
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -22,8 +27,7 @@ export async function middleware(request: NextRequest) {
         getAll() { return request.cookies.getAll(); },
         setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          response = NextResponse.next({ request: { headers: requestHeaders } });
-          cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+          pendingCookies.push(...cookiesToSet);
         },
       },
     }
@@ -32,6 +36,13 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   const path = request.nextUrl.pathname;
   const isPublic = path.startsWith("/login") || path.startsWith("/api/public");
+
+  // Teruskan user.id via header agar Server Component (layout.tsx) tidak
+  // perlu memanggil supabase.auth.getUser() lagi — getUser() melakukan
+  // round-trip validasi ke Supabase Auth, jadi memanggilnya dua kali per
+  // navigasi (middleware + layout) menggandakan latensi tanpa manfaat
+  // keamanan tambahan (middleware sudah memvalidasi sesi di sini).
+  if (user) requestHeaders.set("x-user-id", user.id);
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
@@ -54,6 +65,8 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  pendingCookies.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
   return response;
 }
 
