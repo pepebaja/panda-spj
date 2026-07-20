@@ -49,3 +49,48 @@ export async function getKonteksAnggaran(): Promise<KonteksAnggaran | null> {
   }
   return null;
 }
+
+/**
+ * Memastikan baris `tahun_anggaran` (untuk tahun yang dipilih) dan ketiga
+ * baris standar `tahapan_anggaran` (murni/pergeseran/perubahan) tersedia di
+ * database, membuatnya otomatis kalau belum ada. Dipanggil dari login &
+ * switcher konteks (topbar) agar aplikasi "self-healing" — sebelumnya kalau
+ * `seed.sql` belum/lupa dijalankan, konteks gagal terbentuk TANPA pesan
+ * yang jelas (badge "TA ..." di topbar tidak muncul sama sekali, dan fitur
+ * lain yang bergantung konteks — Transaksi, Import Excel, dsb — ikut gagal
+ * diam-diam). Sekarang baris yang kurang dibuatkan sendiri di sini.
+ *
+ * Perlu client SERVICE ROLE (bypass RLS) karena dipanggil sebelum/di luar
+ * konteks pengguna yang sudah terautentikasi penuh.
+ */
+export async function pastikanKonteksTersedia(
+  admin: any,
+  tahun: number,
+  tahapanKode: string
+): Promise<{ tahunId: string; tahapanId: string } | null> {
+  // 1) Pastikan 3 tahapan standar ada (aman diulang berkali-kali).
+  await admin.from("tahapan_anggaran").upsert(
+    [
+      { kode: "murni", nama: "Murni" },
+      { kode: "pergeseran", nama: "Pergeseran" },
+      { kode: "perubahan", nama: "Perubahan" },
+    ],
+    { onConflict: "kode", ignoreDuplicates: true }
+  );
+
+  // 2) Pastikan tahun yang dipilih tersedia — buat otomatis kalau belum ada.
+  let { data: tahunRow } = await admin.from("tahun_anggaran").select("id").eq("tahun", tahun).maybeSingle();
+  if (!tahunRow) {
+    const { data: created, error } = await admin.from("tahun_anggaran").insert({ tahun, status: "aktif" }).select("id").maybeSingle();
+    if (error) {
+      console.error("[konteks] Gagal membuat tahun_anggaran otomatis:", error.message);
+    } else {
+      tahunRow = created;
+    }
+  }
+
+  const { data: tahapanRow } = await admin.from("tahapan_anggaran").select("id").eq("kode", tahapanKode).maybeSingle();
+
+  if (!tahunRow || !tahapanRow) return null;
+  return { tahunId: tahunRow.id, tahapanId: tahapanRow.id };
+}

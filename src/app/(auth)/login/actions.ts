@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
-import { setKonteksAnggaran } from "@/lib/konteks-anggaran";
+import { setKonteksAnggaran, pastikanKonteksTersedia } from "@/lib/konteks-anggaran";
 
 /**
  * Login mendukung DUA cara mengisi kolom "Username":
@@ -41,12 +41,10 @@ export async function login(prev: { error?: string } | undefined, formData: Form
 
   // Lookup tahun/tahapan tidak bergantung pada identitas pengguna — mulai
   // sekarang juga secara paralel, baru di-`await` belakangan (di bawah).
-  const konteksPromise = tahunDipilih
-    ? Promise.all([
-        admin.from("tahun_anggaran").select("id").eq("tahun", tahunDipilih).maybeSingle(),
-        admin.from("tahapan_anggaran").select("id").eq("kode", tahapanDipilih).maybeSingle(),
-      ])
-    : null;
+  // `pastikanKonteksTersedia` bersifat self-healing: kalau baris tahun/
+  // tahapan yang dipilih belum ada di database (mis. seed.sql belum
+  // dijalankan), akan dibuat otomatis alih-alih gagal diam-diam.
+  const konteksPromise = tahunDipilih ? pastikanKonteksTersedia(admin, tahunDipilih, tahapanDipilih) : null;
 
   let emailUntukLogin: string | null = null;
 
@@ -111,9 +109,9 @@ export async function login(prev: { error?: string } | undefined, formData: Form
 
   // Ambil hasil lookup tahun/tahapan yang sudah berjalan paralel sejak awal.
   if (konteksPromise) {
-    const [{ data: tahunRow }, { data: tahapanRow }] = await konteksPromise;
-    if (tahunRow && tahapanRow) {
-      await setKonteksAnggaran(tahunRow.id, tahapanRow.id);
+    const hasil = await konteksPromise;
+    if (hasil) {
+      await setKonteksAnggaran(hasil.tahunId, hasil.tahapanId);
     }
   }
 

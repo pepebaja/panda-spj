@@ -394,3 +394,27 @@ yang dipilih saat login).
   Anda); kalau project Supabase ada di region lain (mis. Singapore), pindahkan
   region deployment Vercel Function lewat `vercel.json` (`"regions": ["sin1"]`)
   supaya keduanya berdekatan.
+
+## 23. Konteks Tahun Anggaran/Tahapan Kini "Self-Healing"
+
+Sebelumnya, kalau `seed.sql` belum/lupa dijalankan (tabel `tahun_anggaran`
+dan/atau `tahapan_anggaran` kosong), aplikasi gagal membentuk konteks kerja
+**tanpa pesan yang jelas**: badge "TA ..." di topbar tidak muncul sama sekali
+(cuma kelihatan tombol Keluar), halaman Transaksi bilang "Belum ada Kode
+Rekening untuk Tahun Anggaran " (kosong tanpa angka tahun), dan Import Excel
+gagal dengan pesan "Tahun Anggaran aktif tidak terdeteksi" — padahal akar
+masalahnya satu: data dasar tahun/tahapan belum ada.
+
+Sekarang `src/lib/konteks-anggaran.ts` punya fungsi `pastikanKonteksTersedia()`
+yang dipanggil dari **login** dan **switcher topbar** — kalau baris tahun yang
+dipilih belum ada, dibuat otomatis (`status: 'aktif'`); kalau 3 baris tahapan
+standar (Murni/Pergeseran/Perubahan) belum ada, dibuat otomatis juga. Jadi
+aplikasi tidak lagi bergantung sepenuhnya pada `seed.sql` sudah dijalankan
+lebih dulu untuk bagian ini secara spesifik (data Kode Rekening tetap perlu
+diisi manual/impor seperti biasa — hanya kerangka tahun/tahapannya yang
+self-healing).
+
+Sebagai jaring pengaman terakhir, kalau karena suatu sebab konteks tetap
+gagal terbentuk, topbar sekarang menampilkan badge merah "⚠️ Konteks Tahun
+Anggaran belum terbentuk" — **selalu ada sesuatu yang terlihat di pojok kanan
+atas**, tidak lagi kosong tanpa penjelasan seperti sebelumnya.
