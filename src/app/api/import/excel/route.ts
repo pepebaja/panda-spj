@@ -104,17 +104,9 @@ async function upsertPegawaiPptk(supabase: any, nama: string) {
   if (!nama) return null;
   const { data: existing } = await supabase.from("pegawai").select("id").eq("nama", nama).maybeSingle();
   if (existing) return existing.id;
-  // PENTING: `nip` wajib unik di tabel pegawai. Sebelumnya semua PPTK baru
-  // hasil import dibuat dengan nip hardcoded "-", jadi begitu ada LEBIH DARI
-  // SATU nama PPTK baru yang belum terdaftar dalam satu file Excel, baris
-  // kedua dst. gagal dengan error "duplicate key value violates unique
-  // constraint" (nip "-" sudah dipakai baris pertama). Placeholder di bawah
-  // dibuat unik per nama supaya semua PPTK baru berhasil dibuat sekaligus;
-  // NIP asli tinggal dilengkapi manual lewat tab Pegawai di Data Master.
-  const placeholderNip = `IMPORT-${nama.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-").slice(0, 40)}`;
   const { data: created, error } = await supabase
     .from("pegawai")
-    .insert({ nama, nip: placeholderNip, role: "PPTK", status_aktif: true })
+    .insert({ nama, nip: "-", role: "PPTK", status_aktif: true })
     .select("id")
     .single();
   if (error) throw new Error(`gagal membuat pegawai PPTK: ${error.message}`);
