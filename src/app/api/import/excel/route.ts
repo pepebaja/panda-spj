@@ -19,7 +19,9 @@ export async function POST(req: NextRequest) {
 
   const { data: pegawaiAktor } = await supabase.from("pegawai").select("role").eq("id", userData.user.id).single();
   if (pegawaiAktor?.role !== "Administrator") {
-    return NextResponse.json({ error: "Hanya Administrator yang dapat mengimpor data master." }, { status: 403 });
+    return NextResponse.json({
+      error: `Hanya Administrator yang dapat mengimpor data master. (Role terdeteksi pada akun Anda: "${pegawaiAktor?.role ?? "tidak ditemukan — baris pegawai untuk akun ini mungkin belum ada"}")`,
+    }, { status: 403 });
   }
 
   const form = await req.formData();
